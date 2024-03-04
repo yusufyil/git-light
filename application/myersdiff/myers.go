@@ -3,6 +3,7 @@ package myersdiff
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type Myers interface {
@@ -69,7 +70,7 @@ func (myers myers) GenerateDiffScript(src, dst []string) []string {
 		}
 	}
 
-	return append([]string{editString}, deltaScript...)
+	return append([]string{strings.TrimSuffix(editString, "$")}, deltaScript...)
 }
 
 func (myers myers) shortestEditScript(src, dst []string) []operation {
