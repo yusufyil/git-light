@@ -3,12 +3,11 @@ package myersdiff
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type Myers interface {
 	GenerateDiff(src, dst []string)
-	GenerateDiffScript(src, dst []string) []string
+	GenerateDiffScript(src, dst []string) Diff
 }
 
 type myers struct {
@@ -41,12 +40,12 @@ func (myers myers) GenerateDiff(src, dst []string) {
 	}
 }
 
-func (myers myers) GenerateDiffScript(src, dst []string) []string {
+func (myers myers) GenerateDiffScript(src, dst []string) Diff {
 	script := myers.shortestEditScript(src, dst)
 	srcIndex, dstIndex := 0, 0
 
 	var editString string
-	insertedLineCount := 1 // due to editString prepending
+	insertedLineCount := 0
 	deltaScript := make([]string, 0)
 
 	for _, op := range script {
@@ -70,7 +69,7 @@ func (myers myers) GenerateDiffScript(src, dst []string) []string {
 		}
 	}
 
-	return append([]string{strings.TrimSuffix(editString, "$")}, deltaScript...)
+	return Diff{Commands: editString, Data: deltaScript}
 }
 
 func (myers myers) shortestEditScript(src, dst []string) []operation {

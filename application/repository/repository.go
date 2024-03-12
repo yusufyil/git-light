@@ -180,51 +180,43 @@ func (r repository) ListAllFiles(root string) ([]string, error) {
 }
 
 func (r repository) MoveFiles(sourceDir, destinationDir string) error {
-	// Open the source directory
 	source, err := os.Open(sourceDir)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
 
-	// Check if the destination directory exists
 	_, err = os.Stat(destinationDir)
 	if os.IsNotExist(err) {
 		return errors.New("destination folder does not exist")
 	}
 
-	// Read all the files in the source directory
 	fileInfos, err := source.Readdir(-1)
 	if err != nil {
 		return err
 	}
 
-	// Move each file to the destination directory
 	for _, fileInfo := range fileInfos {
 		sourcePath := filepath.Join(sourceDir, fileInfo.Name())
 		destinationPath := filepath.Join(destinationDir, fileInfo.Name())
 
-		// Open the source file
 		sourceFile, err := os.Open(sourcePath)
 		if err != nil {
 			return err
 		}
 		defer sourceFile.Close()
 
-		// Create the destination file
 		destinationFile, err := os.Create(destinationPath)
 		if err != nil {
 			return err
 		}
 		defer destinationFile.Close()
 
-		// Copy the file contents from source to destination
 		_, err = io.Copy(destinationFile, sourceFile)
 		if err != nil {
 			return err
 		}
 
-		// Remove the source file after copying
 		err = os.Remove(sourcePath)
 		if err != nil {
 			return err

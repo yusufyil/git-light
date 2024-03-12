@@ -22,9 +22,22 @@ func main() {
 	//}
 
 	commitService := checkout.NewCommitService(repo, calculator)
+	//lines1, _ := repo.GetFileLines("1.txt")
+	//lines2, _ := repo.GetFileLines("2.txt")
+	//calculator.GenerateDiff(lines1, lines2)
 	//commitService.Initialize()
-	commitService.AddToStage("*")
-	commitService.CommitChanges("first commit message", "yusuf.yildirim@trendyol.com")
+	commitService.AddToStage("deneme.txt")
+	commitService.CommitChanges("second commit message", "yusuf.yildirim@trendyol.com")
+	commitService.Log()
+
+	//var commit checkout.Commit
+	//var diff myersdiff.Diff
+	//_ = repo.DecompressFromFileAndConvert(".git-light/objects/a36fa2f1c4713ef75b7a334bc8d34dfeffb2ed77", &commit)
+	//_ = repo.DecompressFromFileAndConvert(".git-light/objects/023bcc862d142ae728649d30cc1ab7c68410e5f1", &diff)
+	//
+	//fmt.Println(commit)
+	//fmt.Println(diff)
+	//fmt.Println(commitService)
 
 	//TODO apply changes to source in order to create destination
 	// applyDelta (source []string, editScript []string)
