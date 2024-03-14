@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,17 +20,16 @@ type CommitService interface {
 	Initialize()
 	AddToStage(path string)
 	CommitChanges(commitMessage string, committer string)
+	Checkout(commitHash string)
 	Log()
 }
 
-const baseFilePath = ".git-light"
-const defaultBranchName = "main"
+const (
+	baseFilePath      = ".git-light"
+	defaultBranchName = "main"
+)
 
-// TODO
-// staging area isimli alanda maximum 1 commit tutulmali git-light add ile bir islem yapilirsa buraya eklennekli
-// branches
-// HEAD
-// objects
+//todo use filepath.join with all paths
 
 type commitService struct {
 	repo  repository.Repository
@@ -70,6 +70,11 @@ func (cs commitService) Initialize() {
 		return
 	}
 
+	err = os.Mkdir(baseFilePath+"/temp", 0700)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	err = cs.repo.WriteToFile(baseFilePath+"/HEAD", []string{defaultBranchName})
 	if err != nil {
 		log.Fatal(err)
@@ -84,7 +89,6 @@ func (cs commitService) Initialize() {
 }
 
 func (cs commitService) CommitChanges(commitMessage string, committer string) {
-	//todo update date message and committer of commit object in staging area and move them to objects folder
 	var commit Commit
 	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/stage/"+"commit", &commit)
 	if err != nil {
@@ -114,7 +118,6 @@ func (cs commitService) CommitChanges(commitMessage string, committer string) {
 }
 
 func (cs commitService) AddToStage(path string) {
-	// todo you should also create a commit object at the beginning and update it whenever add command called
 	stageCommit := Commit{
 		Committer:      "",
 		Date:           time.Time{},
@@ -125,7 +128,6 @@ func (cs commitService) AddToStage(path string) {
 
 	var filePaths []string
 	if path == "*" || path == "." {
-		// add all the contents
 		allFiles, err := cs.repo.ListAllFiles("./")
 		if err != nil {
 			log.Println(err)
@@ -193,6 +195,40 @@ func (cs commitService) AddToStage(path string) {
 		log.Println(err)
 	}
 
+}
+
+func (cs commitService) Checkout(commitHash string) {
+	var commit Commit
+	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commitHash, &commit)
+	if err != nil {
+		fmt.Println("given commit hash / branch name is not valid")
+		return
+	}
+
+	var checkoutFailure = false
+	for _, file := range commit.Files {
+		content := cs.ExtractFileFromObjectStore(file.Hash)
+
+		err = cs.repo.WriteToFile(baseFilePath+"/temp/"+file.Path, content)
+		if err != nil {
+			fmt.Println("failed to write file to object store with name: " + file.Path)
+			checkoutFailure = true
+			break
+		}
+	}
+
+	if checkoutFailure {
+		err = os.Remove(baseFilePath + "/temp")
+		if err != nil {
+			fmt.Println("failed to remove temporary files")
+		}
+		return
+	}
+
+	err = cs.repo.MoveFiles(baseFilePath+"/temp", "./")
+	if err != nil {
+		fmt.Println("failed to move extracted files")
+	}
 }
 
 func (cs commitService) checkObjectStore() bool {
@@ -280,7 +316,6 @@ func (cs commitService) applyDelta(source []string, diff myersdiff.Diff) []strin
 		if strings.Contains(command, "i") {
 			insert := strings.Split(strings.Replace(command, "i", "", 1), "-")
 			insertionDestIndex, err := strconv.Atoi(insert[0])
-			//insertionDestIndex -= deletedRowCount
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -288,7 +323,7 @@ func (cs commitService) applyDelta(source []string, diff myersdiff.Diff) []strin
 			if err != nil {
 				log.Fatal(err)
 			}
-			source = append(source[:insertionDestIndex], append([]string{diff.Data[insertionSourceIndex]}, source[:insertionDestIndex]...)...)
+			source = slices.Insert(source, insertionDestIndex, diff.Data[insertionSourceIndex])
 		}
 	}
 
@@ -316,14 +351,10 @@ func (cs commitService) Log() {
 	commit, err := cs.GetLastCommitOnCurrentBranch()
 
 	for err == nil {
+		fmt.Println("****")
 		fmt.Println(commit.Message)
 		fmt.Println(commit.Committer)
-		fmt.Println("****")
-		for _, file := range commit.Files {
-			fmt.Println(file.Path + "-> contents")
-			object := cs.ExtractFileFromObjectStore(file.Hash)
-			fmt.Println(object)
-		}
+		fmt.Println(commit.CalculateHashForCommit())
 
 		err = cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commit.PreviousCommit, &commit)
 		if err != nil {
