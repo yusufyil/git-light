@@ -92,7 +92,7 @@ func (cs commitService) CommitChanges(commitMessage string, committer string) {
 	var commit Commit
 	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/stage/"+"commit", &commit)
 	if err != nil {
-		log.Println("failed to read commit object from staging area")
+		log.Println("nothing found in staging area, you should first add your changes")
 	}
 
 	commit.Message = commitMessage
@@ -118,6 +118,7 @@ func (cs commitService) CommitChanges(commitMessage string, committer string) {
 }
 
 func (cs commitService) AddToStage(path string) {
+	var deltaFound = false
 	stageCommit := Commit{
 		Committer:      "",
 		Date:           time.Time{},
@@ -135,30 +136,26 @@ func (cs commitService) AddToStage(path string) {
 		}
 		filePaths = append(filePaths, allFiles...)
 	} else {
-		// todo (you should check if given file existing later)
 		filePaths = append(filePaths, path)
 	}
 
 	lastCommit, err := cs.GetLastCommitOnCurrentBranch()
 	if err != nil {
 		stageCommit.PreviousCommit = "nil"
-		// todo branch initially empty, so create everything from scratch
 		for _, filePath := range filePaths {
 			lines, err := cs.repo.GetFileLines(filePath)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
+			deltaFound = true
 			sha1Hash := cs.CalculateSHA1Hash(lines)
 			stageCommit.Files = append(stageCommit.Files, File{Path: filePath, Hash: sha1Hash})
-			//err = cs.repo.WriteToFile(baseFilePath+"/stage/"+sha1Hash, append([]string{"nil"}, lines...))
 			err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: lines}, baseFilePath+"/stage/"+sha1Hash)
 			if err != nil {
 				return
 			}
 		}
-
 	} else {
-		// todo get filePaths from commit, if new file created, create that file accordingly if a file modified create  another object on top of existing one
 		stageCommit.PreviousCommit = lastCommit.CalculateHashForCommit()
 		for _, filePath := range filePaths {
 
@@ -173,11 +170,10 @@ func (cs commitService) AddToStage(path string) {
 					currentFileHash := cs.CalculateSHA1Hash(currentFile)
 					previousFileHash := cs.CalculateSHA1Hash(previousFile)
 					if currentFileHash != previousFileHash {
+						deltaFound = true
 						diff := cs.myers.GenerateDiffScript(previousFile, currentFile)
-						// TODO should update previous blob hash of diff object to previous file hash
 						diff.PreviousBlobHash = previousFileHash
 						stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: currentFileHash})
-						//err := cs.repo.WriteToFile(baseFilePath+"/stage/"+currentFileHash, append([]string{currentFileHash}, diff...))
 						err := cs.repo.CompressAndSaveToFile(diff, baseFilePath+"/stage/"+currentFileHash)
 						if err != nil {
 							log.Println(err)
@@ -189,16 +185,25 @@ func (cs commitService) AddToStage(path string) {
 		}
 	}
 
-	// todo also save commit object to staging area
-	err = cs.repo.CompressAndSaveToFile(stageCommit, baseFilePath+"/stage/"+"commit")
-	if err != nil {
-		log.Println(err)
+	if deltaFound {
+		err = cs.repo.CompressAndSaveToFile(stageCommit, baseFilePath+"/stage/"+"commit")
+		if err != nil {
+			log.Println(err)
+		}
 	}
-
 }
 
 func (cs commitService) Checkout(commitHash string) {
 	var commit Commit
+	//lines, err := cs.repo.GetFileLines(baseFilePath + "/branches/" + commitHash)
+	//if err != nil {
+	//	commitHash = lines[0]
+	//	err := cs.repo.WriteToFile(baseFilePath+"/HEAD", []string{commitHash})
+	//	if err != nil {
+	//		fmt.Println("an error occurred when updating head")
+	//	}
+	//}
+
 	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commitHash, &commit)
 	if err != nil {
 		fmt.Println("given commit hash / branch name is not valid")
@@ -355,6 +360,7 @@ func (cs commitService) Log() {
 		fmt.Println(commit.Message)
 		fmt.Println(commit.Committer)
 		fmt.Println(commit.CalculateHashForCommit())
+		fmt.Println(commit.Files)
 
 		err = cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commit.PreviousCommit, &commit)
 		if err != nil {

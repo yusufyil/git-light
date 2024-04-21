@@ -51,19 +51,19 @@ func (myers myers) GenerateDiffScript(src, dst []string) Diff {
 	for _, op := range script {
 		switch op {
 		case INSERT:
-			fmt.Println(colors[op] + "+" + dst[dstIndex] + " " + strconv.Itoa(dstIndex))
+			//fmt.Println(colors[op] + "+" + dst[dstIndex] + " " + strconv.Itoa(dstIndex))
 			editString += "i" + strconv.Itoa(dstIndex) + "-" + strconv.Itoa(insertedLineCount) + "$"
 			deltaScript = append(deltaScript, dst[dstIndex])
 			dstIndex += 1
 			insertedLineCount++
 
 		case MOVE:
-			fmt.Println(colors[op] + " " + src[srcIndex])
+			//fmt.Println(colors[op] + " " + src[srcIndex])
 			srcIndex += 1
 			dstIndex += 1
 
 		case DELETE:
-			fmt.Println(colors[op] + "-" + src[srcIndex] + " " + strconv.Itoa(srcIndex))
+			//fmt.Println(colors[op] + "-" + src[srcIndex] + " " + strconv.Itoa(srcIndex))
 			editString += "d" + strconv.Itoa(srcIndex) + "$"
 			srcIndex += 1
 		}

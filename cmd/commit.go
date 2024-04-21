@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"git-light/application/checkout"
 	"git-light/application/myersdiff"
 	"git-light/application/repository"
@@ -15,14 +14,13 @@ var committerEmail string
 var commitCmd = &cobra.Command{
 	Use:   "commit",
 	Short: "commits given file",
-	Long:  `long exp..`,
-	//Args:  cobra.ExactArgs(1),
+	Long: `this command creates a commit on top of current branch from staging area, if staging area empty or arguments
+			mismatch program will exit`,
 	Run: func(cmd *cobra.Command, args []string) {
 		repo := repository.NewRepository()
 		myersDiff := myersdiff.NewMyersDiffCalculator()
 		commitService := checkout.NewCommitService(repo, myersDiff)
 		commitService.CommitChanges(commitMessage, committerEmail)
-		fmt.Println("commit called")
 	},
 }
 
