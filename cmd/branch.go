@@ -2,49 +2,45 @@ package cmd
 
 import (
 	"git-light/application/branch"
+	"git-light/application/repository"
 	"github.com/spf13/cobra"
 )
 
-var branchName string
+var (
+	deleteBranch    string
+	listAllBranches bool
+)
 
-var createBranchCmd = &cobra.Command{
+var branchCmd = &cobra.Command{
 	Use:   "branch",
-	Short: "creates branch",
-	Long:  `this command creates branch on top of existing commit hash`,
+	Short: "Manage branches",
+	Long:  `The branch command allows you to create, delete, and list branches.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		branchService := branch.NewBranchService()
-		_ = branchService.CreateBranch(branchName)
-	},
-}
-
-var deleteBranchCmd = &cobra.Command{
-	Use:   "branch",
-	Short: "deletes branch",
-	Long:  `this command deletes`,
-	Run: func(cmd *cobra.Command, args []string) {
-		branchService := branch.NewBranchService()
-		_ = branchService.DeleteBranch(branchName)
-	},
-}
-
-var listBranchCmd = &cobra.Command{
-	Use:   "branch",
-	Short: "list all branches",
-	Long:  `this command deletes`,
-	Args:  cobra.ExactArgs(0),
-	Run: func(cmd *cobra.Command, args []string) {
-		branchService := branch.NewBranchService()
-		_ = branchService.ListAllBranches()
+		if listAllBranches {
+			repo := repository.NewRepository()
+			branchService := branch.NewBranchService(repo)
+			_ = branchService.ListAllBranches()
+			return
+		}
+		if deleteBranch != "" {
+			repo := repository.NewRepository()
+			branchService := branch.NewBranchService(repo)
+			branchService.DeleteBranch(deleteBranch)
+			return
+		}
+		if len(args) > 0 {
+			repo := repository.NewRepository()
+			branchService := branch.NewBranchService(repo)
+			branchService.CreateBranch(args[0])
+		} else {
+			_ = cmd.Help()
+		}
 	},
 }
 
 func init() {
-	//RootCmd.AddCommand(createBranchCmd)
-	//RootCmd.AddCommand(deleteBranchCmd)
-	//RootCmd.AddCommand(listBranchCmd)
+	RootCmd.AddCommand(branchCmd)
 
-	//createBranchCmd.Flags().StringVarP(&branchName, "branchName", "b", "", "branch name")
-	//deleteBranchCmd.Flags().StringVarP(&branchName, "branchName", "d", "", "branch name")
-	//listBranchCmd.Flags().StringVarP(&branchName, "branchName", "a", "", "branch name")
-
+	branchCmd.Flags().StringVarP(&deleteBranch, "delete", "d", "", "Delete a branch")
+	branchCmd.Flags().BoolVarP(&listAllBranches, "all", "a", false, "List all branches")
 }

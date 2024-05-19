@@ -7,7 +7,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,12 +15,11 @@ import (
 type Repository interface {
 	GetFileLines(p string) ([]string, error)
 	WriteToFile(p string, content []string) error
-	CompressAndSaveStrings(p string, input []string) error
-	LoadAndDecompressStrings(p string) ([]string, error)
 	CompressAndSaveToFile(data interface{}, filename string) error
 	DecompressFromFileAndConvert(filename string, data interface{}) error
 	ListAllFiles(root string) ([]string, error)
 	MoveFiles(sourceDir, destinationDir string) error
+	DeleteFiles(path string) error
 }
 
 type repository struct {
@@ -76,52 +74,6 @@ func (r repository) WriteToFile(p string, content []string) error {
 	return nil
 }
 
-func (r repository) CompressAndSaveStrings(p string, input []string) error {
-	var buf bytes.Buffer
-	gzipWriter := gzip.NewWriter(&buf)
-
-	for _, str := range input {
-		_, err := gzipWriter.Write([]byte(str + "\n"))
-		if err != nil {
-			return err
-		}
-	}
-	gzipWriter.Close()
-
-	err := ioutil.WriteFile(p, buf.Bytes(), 0644)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r repository) LoadAndDecompressStrings(p string) ([]string, error) {
-	compressedData, err := ioutil.ReadFile(p)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := bytes.NewBuffer(compressedData)
-	gzipReader, err := gzip.NewReader(buf)
-	if err != nil {
-		return nil, err
-	}
-	defer gzipReader.Close()
-
-	decompressedData, err := ioutil.ReadAll(gzipReader)
-	if err != nil {
-		return nil, err
-	}
-
-	lines := strings.Split(string(decompressedData), "\n")
-
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-
-	return lines, nil
-}
-
 func (r repository) CompressAndSaveToFile(data interface{}, filename string) error {
 	var buf bytes.Buffer
 	encoder := gob.NewEncoder(&buf)
@@ -171,7 +123,16 @@ func (r repository) ListAllFiles(root string) ([]string, error) {
 	var files []string
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && !strings.HasPrefix(path, ".git") && !strings.HasPrefix(path, ".idea") && strings.HasSuffix(path, ".go") {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			if strings.HasPrefix(path, filepath.Join(root, ".git")) ||
+				strings.HasPrefix(path, filepath.Join(root, ".idea")) {
+				return filepath.SkipDir
+			}
+		} else {
 			files = append(files, path)
 		}
 		return nil
@@ -224,4 +185,8 @@ func (r repository) MoveFiles(sourceDir, destinationDir string) error {
 	}
 
 	return nil
+}
+
+func (r repository) DeleteFiles(path string) error {
+	return os.Remove(path)
 }

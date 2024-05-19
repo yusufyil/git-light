@@ -1,12 +1,10 @@
 package myersdiff
 
 import (
-	"fmt"
 	"strconv"
 )
 
 type Myers interface {
-	GenerateDiff(src, dst []string)
 	GenerateDiffScript(src, dst []string) Diff
 }
 
@@ -15,29 +13,6 @@ type myers struct {
 
 func NewMyersDiffCalculator() Myers {
 	return myers{}
-}
-
-func (myers myers) GenerateDiff(src, dst []string) {
-	script := myers.shortestEditScript(src, dst)
-	//TODO should return delta commit string in order to save file system
-	srcIndex, dstIndex := 0, 0
-
-	for _, op := range script {
-		switch op {
-		case INSERT:
-			fmt.Println(colors[op] + "+" + dst[dstIndex] + " " + strconv.Itoa(dstIndex))
-			dstIndex += 1
-
-		case MOVE:
-			fmt.Println(colors[op] + " " + src[srcIndex])
-			srcIndex += 1
-			dstIndex += 1
-
-		case DELETE:
-			fmt.Println(colors[op] + "-" + src[srcIndex] + " " + strconv.Itoa(srcIndex))
-			srcIndex += 1
-		}
-	}
 }
 
 func (myers myers) GenerateDiffScript(src, dst []string) Diff {
@@ -51,19 +26,16 @@ func (myers myers) GenerateDiffScript(src, dst []string) Diff {
 	for _, op := range script {
 		switch op {
 		case INSERT:
-			//fmt.Println(colors[op] + "+" + dst[dstIndex] + " " + strconv.Itoa(dstIndex))
 			editString += "i" + strconv.Itoa(dstIndex) + "-" + strconv.Itoa(insertedLineCount) + "$"
 			deltaScript = append(deltaScript, dst[dstIndex])
 			dstIndex += 1
 			insertedLineCount++
 
 		case MOVE:
-			//fmt.Println(colors[op] + " " + src[srcIndex])
 			srcIndex += 1
 			dstIndex += 1
 
 		case DELETE:
-			//fmt.Println(colors[op] + "-" + src[srcIndex] + " " + strconv.Itoa(srcIndex))
 			editString += "d" + strconv.Itoa(srcIndex) + "$"
 			srcIndex += 1
 		}
@@ -174,12 +146,4 @@ func (myers myers) reverse(s []operation) []operation {
 	}
 
 	return result
-}
-
-func (myers myers) consecutiveOperationsCount(index int, script []operation) int {
-	consecutiveOperations := 1
-	for j := index + 1; len(script) > j && (script[j] == script[index]); j++ {
-		consecutiveOperations++
-	}
-	return consecutiveOperations
 }

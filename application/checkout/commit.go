@@ -3,7 +3,7 @@ package checkout
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"fmt"
+	"log"
 	"time"
 )
 
@@ -25,8 +25,7 @@ func (c Commit) CalculateHashForCommit() string {
 	for _, file := range c.Files {
 		_, err := hasher.Write([]byte(file.Hash))
 		if err != nil {
-			fmt.Println("Error while writing to hasher:", err)
-			return ""
+			log.Fatal("got error while hashing commit, err: ", err.Error())
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"git-light/application/myersdiff"
 	"git-light/application/repository"
+	"git-light/util"
 	"log"
 	"os"
 	"path/filepath"
@@ -24,13 +25,6 @@ type CommitService interface {
 	Log()
 }
 
-const (
-	baseFilePath      = ".git-light"
-	defaultBranchName = "main"
-)
-
-//todo use filepath.join with all paths
-
 type commitService struct {
 	repo  repository.Repository
 	myers myersdiff.Myers
@@ -43,77 +37,70 @@ func NewCommitService(repo repository.Repository, myers myersdiff.Myers) CommitS
 func (cs commitService) Initialize() {
 	if cs.checkObjectStore() {
 		log.Fatal("this directory has already initialized with git-light")
-		// called method already has log.fatal remove this part.
 	}
 
-	err := os.Mkdir(baseFilePath, 0700)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	err = os.Mkdir(baseFilePath+"/branches", 0700)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	err = os.Mkdir(baseFilePath+"/stage", 0700)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	err = os.Mkdir(baseFilePath+"/objects", 0700)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	err = os.Mkdir(baseFilePath+"/temp", 0700)
+	err := os.Mkdir(util.BaseFilePath, 0700)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = cs.repo.WriteToFile(baseFilePath+"/HEAD", []string{defaultBranchName})
+	err = os.Mkdir(filepath.Join(util.BaseFilePath, util.BranchFolder), 0700)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
-	err = cs.repo.WriteToFile(baseFilePath+"/branches/"+defaultBranchName, []string{"nil"})
+	err = os.Mkdir(filepath.Join(util.BaseFilePath, util.StageFolder), 0700)
 	if err != nil {
 		log.Fatal(err)
-		return
+	}
+
+	err = os.Mkdir(filepath.Join(util.BaseFilePath, util.ObjectFolder), 0700)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = os.Mkdir(filepath.Join(util.BaseFilePath, util.TempFolder), 0700)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{util.DefaultBranchName})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.BranchFolder, util.DefaultBranchName), []string{"nil"})
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
 func (cs commitService) CommitChanges(commitMessage string, committer string) {
 	var commit Commit
-	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/stage/"+"commit", &commit)
+	err := cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.StageFolder, "commit"), &commit)
 	if err != nil {
-		log.Println("nothing found in staging area, you should first add your changes")
+		log.Fatal("nothing found in staging area, you should first add your changes")
 	}
 
 	commit.Message = commitMessage
 	commit.Committer = committer
 	commit.Date = time.Now()
-	err = cs.repo.CompressAndSaveToFile(commit, baseFilePath+"/stage/"+"commit")
+	err = cs.repo.CompressAndSaveToFile(commit, filepath.Join(util.BaseFilePath, util.StageFolder, "commit"))
 	if err != nil {
-		log.Println("failed to write commit object from staging area")
+		log.Fatal("failed to write commit object from staging area")
 	}
 
 	commitHash := commit.CalculateHashForCommit()
-	err = os.Rename(baseFilePath+"/stage/"+"commit", baseFilePath+"/stage/"+commitHash)
+	err = os.Rename(filepath.Join(util.BaseFilePath, util.StageFolder, "commit"), filepath.Join(util.BaseFilePath, util.StageFolder, commitHash))
 	if err != nil {
-		log.Println("failed to rename commit object from staging area")
+		log.Fatal("failed to rename commit object from staging area")
 	}
 
 	cs.UpdateCurrentBranch(commitHash)
 
-	err = cs.repo.MoveFiles(baseFilePath+"/stage", baseFilePath+"/objects")
+	err = cs.repo.MoveFiles(filepath.Join(util.BaseFilePath, util.StageFolder), filepath.Join(util.BaseFilePath, util.ObjectFolder))
 	if err != nil {
-		log.Println("failed to move staging area to permanent object store")
+		log.Fatal("failed to move staging area to permanent object store")
 	}
 }
 
@@ -131,8 +118,7 @@ func (cs commitService) AddToStage(path string) {
 	if path == "*" || path == "." {
 		allFiles, err := cs.repo.ListAllFiles("./")
 		if err != nil {
-			log.Println(err)
-			return
+			log.Fatal("failed to get all file paths for root repository.")
 		}
 		filePaths = append(filePaths, allFiles...)
 	} else {
@@ -145,14 +131,14 @@ func (cs commitService) AddToStage(path string) {
 		for _, filePath := range filePaths {
 			lines, err := cs.repo.GetFileLines(filePath)
 			if err != nil {
-				log.Println(err)
+				log.Fatal("failed to read files. file path: " + filePath)
 			}
 			deltaFound = true
 			sha1Hash := cs.CalculateSHA1Hash(lines)
 			stageCommit.Files = append(stageCommit.Files, File{Path: filePath, Hash: sha1Hash})
-			err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: lines}, baseFilePath+"/stage/"+sha1Hash)
+			err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: lines}, filepath.Join(util.BaseFilePath, util.BranchFolder, sha1Hash))
 			if err != nil {
-				return
+				log.Fatal("failed to save given file to stage: " + filePath)
 			}
 		}
 	} else {
@@ -161,7 +147,7 @@ func (cs commitService) AddToStage(path string) {
 
 			currentFile, err := cs.repo.GetFileLines(filePath)
 			if err != nil {
-				log.Println(err)
+				log.Fatal("failed to read files. file path: " + filePath)
 			}
 
 			for _, file := range lastCommit.Files {
@@ -174,65 +160,69 @@ func (cs commitService) AddToStage(path string) {
 						diff := cs.myers.GenerateDiffScript(previousFile, currentFile)
 						diff.PreviousBlobHash = previousFileHash
 						stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: currentFileHash})
-						err := cs.repo.CompressAndSaveToFile(diff, baseFilePath+"/stage/"+currentFileHash)
+						err := cs.repo.CompressAndSaveToFile(diff, filepath.Join(util.BaseFilePath, util.StageFolder, currentFileHash))
 						if err != nil {
-							log.Println(err)
-							return
+							log.Fatal("failed to save given file to stage: " + filePath)
 						}
 					}
+					//todo may be else can be added here.
 				}
 			}
+			//todo should also commit newly added files to new commit
 		}
 	}
 
 	if deltaFound {
-		err = cs.repo.CompressAndSaveToFile(stageCommit, baseFilePath+"/stage/"+"commit")
+		err = cs.repo.CompressAndSaveToFile(stageCommit, filepath.Join(util.BaseFilePath, util.StageFolder, "commit"))
 		if err != nil {
-			log.Println(err)
+			log.Fatal("failed to save commit to stage")
 		}
 	}
 }
 
-func (cs commitService) Checkout(commitHash string) {
+func (cs commitService) Checkout(commitHashOrBranch string) {
 	var commit Commit
-	//lines, err := cs.repo.GetFileLines(baseFilePath + "/branches/" + commitHash)
-	//if err != nil {
-	//	commitHash = lines[0]
-	//	err := cs.repo.WriteToFile(baseFilePath+"/HEAD", []string{commitHash})
-	//	if err != nil {
-	//		fmt.Println("an error occurred when updating head")
-	//	}
-	//}
+	lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.BranchFolder, commitHashOrBranch))
+	if err == nil {
+		err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+		if err != nil {
+			log.Fatal("an error occurred when updating head")
+		}
+		commitHashOrBranch = lines[0]
+	} else {
+		err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+		if err != nil {
+			log.Fatal("an error occurred when updating head")
+		}
+	}
 
-	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commitHash, &commit)
+	err = cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, commitHashOrBranch), &commit)
 	if err != nil {
-		fmt.Println("given commit hash / branch name is not valid")
-		return
+		log.Fatal("no such commit hash / branch found")
 	}
 
 	var checkoutFailure = false
 	for _, file := range commit.Files {
 		content := cs.ExtractFileFromObjectStore(file.Hash)
 
-		err = cs.repo.WriteToFile(baseFilePath+"/temp/"+file.Path, content)
+		err = cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.TempFolder, file.Path), content)
 		if err != nil {
-			fmt.Println("failed to write file to object store with name: " + file.Path)
+			log.Println("failed to write file to object store with name: " + file.Path)
 			checkoutFailure = true
 			break
 		}
 	}
 
 	if checkoutFailure {
-		err = os.Remove(baseFilePath + "/temp")
+		err = os.Remove(filepath.Join(util.BaseFilePath, util.TempFolder))
 		if err != nil {
-			fmt.Println("failed to remove temporary files")
+			log.Fatal("failed to remove temporary files")
 		}
-		return
 	}
 
-	err = cs.repo.MoveFiles(baseFilePath+"/temp", "./")
+	err = cs.repo.MoveFiles(filepath.Join(util.BaseFilePath, util.TempFolder), "./")
 	if err != nil {
-		fmt.Println("failed to move extracted files")
+		log.Fatal("failed to move extracted files")
 	}
 }
 
@@ -241,8 +231,7 @@ func (cs commitService) checkObjectStore() bool {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dir := currentDir + "/" + baseFilePath
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(currentDir, util.BaseFilePath)); os.IsNotExist(err) {
 		return false
 	} else {
 		return true
@@ -250,26 +239,24 @@ func (cs commitService) checkObjectStore() bool {
 }
 
 func (cs commitService) GetCurrentBranch() string {
-	lines, err := cs.repo.GetFileLines(baseFilePath + "/HEAD")
+	lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.Head))
 	if err != nil {
-		log.Fatal(err)
-		return ""
+		log.Fatal("failed to get current branch")
 	}
 	return lines[0]
 }
 
 func (cs commitService) UpdateCurrentBranch(commitSha string) {
 	currentBranch := cs.GetCurrentBranch()
-	err := cs.repo.WriteToFile(baseFilePath+"/branches/"+currentBranch, []string{commitSha})
+	err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.BranchFolder, currentBranch), []string{commitSha})
 	if err != nil {
-		log.Fatal(err)
-		return
+		log.Fatal("failed to update current branch")
 	}
 }
 
 func (cs commitService) GetLastCommitOnCurrentBranch() (Commit, error) {
 	currentBranch := cs.GetCurrentBranch()
-	lines, err := cs.repo.GetFileLines(baseFilePath + "/branches/" + currentBranch)
+	lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.BranchFolder, currentBranch))
 	if err != nil {
 		log.Println(err)
 		return Commit{}, err
@@ -281,9 +268,9 @@ func (cs commitService) GetLastCommitOnCurrentBranch() (Commit, error) {
 	}
 
 	var commit Commit
-	err = cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+lines[0], &commit)
+	err = cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, lines[0]), &commit)
 	if err != nil {
-		log.Println("can't find any object")
+		log.Println("failed to get last commit from repository")
 		return Commit{}, err
 	}
 
@@ -292,13 +279,16 @@ func (cs commitService) GetLastCommitOnCurrentBranch() (Commit, error) {
 
 func (cs commitService) ExtractFileFromObjectStore(hash string) []string {
 	var diff myersdiff.Diff
-	err := cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+hash, &diff)
+	err := cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, hash), &diff)
+
 	if err != nil {
 		log.Fatal("failed to decompress delta err: " + err.Error())
 	}
+
 	if diff.PreviousBlobHash == "nil" {
 		return diff.Data
 	}
+
 	source := cs.ExtractFileFromObjectStore(diff.PreviousBlobHash)
 	return cs.applyDelta(source, diff)
 }
@@ -310,7 +300,7 @@ func (cs commitService) applyDelta(source []string, diff myersdiff.Diff) []strin
 		if strings.Contains(command, "d") {
 			deletedRow, err := strconv.Atoi(strings.Replace(command, "d", "", 1))
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("delta calculation error, failed to decompose instructions: " + err.Error())
 			}
 			source = append(source[:deletedRow-deletedRowCount], source[deletedRow-deletedRowCount+1:]...)
 			deletedRowCount++
@@ -322,11 +312,11 @@ func (cs commitService) applyDelta(source []string, diff myersdiff.Diff) []strin
 			insert := strings.Split(strings.Replace(command, "i", "", 1), "-")
 			insertionDestIndex, err := strconv.Atoi(insert[0])
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("delta calculation error, failed to decompose instructions: " + err.Error())
 			}
 			insertionSourceIndex, err := strconv.Atoi(insert[1])
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("delta calculation error, failed to decompose instructions: " + err.Error())
 			}
 			source = slices.Insert(source, insertionDestIndex, diff.Data[insertionSourceIndex])
 		}
@@ -335,14 +325,13 @@ func (cs commitService) applyDelta(source []string, diff myersdiff.Diff) []strin
 	return source
 }
 
-func (cs commitService) CalculateSHA1Hash(strings []string) string {
+func (cs commitService) CalculateSHA1Hash(lines []string) string {
 	hasher := sha1.New()
 
-	for _, str := range strings {
+	for _, str := range lines {
 		_, err := hasher.Write([]byte(str))
 		if err != nil {
-			fmt.Println("Error while writing to hasher:", err)
-			return ""
+			log.Fatal("an error occurred during hash process", err.Error())
 		}
 	}
 
@@ -356,13 +345,12 @@ func (cs commitService) Log() {
 	commit, err := cs.GetLastCommitOnCurrentBranch()
 
 	for err == nil {
-		fmt.Println("****")
-		fmt.Println(commit.Message)
-		fmt.Println(commit.Committer)
-		fmt.Println(commit.CalculateHashForCommit())
-		fmt.Println(commit.Files)
+		fmt.Printf("\033[32m  commit %s\n", commit.CalculateHashForCommit())
+		fmt.Printf("\033[34m Author: %s\n", commit.Committer)
+		fmt.Printf("\033[36m Date:   %s\n\n", commit.Date.Format("Mon Jan 2 15:04:05 2006 -0700"))
+		fmt.Printf("\033[31m    %s\n\n", commit.Message)
 
-		err = cs.repo.DecompressFromFileAndConvert(baseFilePath+"/objects/"+commit.PreviousCommit, &commit)
+		err = cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, commit.PreviousCommit), &commit)
 		if err != nil {
 			break
 		}
