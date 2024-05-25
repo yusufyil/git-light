@@ -19,7 +19,7 @@ import (
 
 type CommitService interface {
 	Initialize()
-	AddToStage(path string)
+	AddToStage(filePaths []string)
 	CommitChanges(commitMessage string, committer string)
 	Checkout(commitHash string)
 	Log()
@@ -91,6 +91,9 @@ func (cs commitService) CommitChanges(commitMessage string, committer string) {
 	}
 
 	commitHash := commit.CalculateHashForCommit()
+	if commitHash == commit.PreviousCommit {
+		log.Fatal("no change has been made since last commit. aborting commit process.")
+	}
 	err = os.Rename(filepath.Join(util.BaseFilePath, util.StageFolder, "commit"), filepath.Join(util.BaseFilePath, util.StageFolder, commitHash))
 	if err != nil {
 		log.Fatal("failed to rename commit object from staging area")
@@ -104,25 +107,14 @@ func (cs commitService) CommitChanges(commitMessage string, committer string) {
 	}
 }
 
-func (cs commitService) AddToStage(path string) {
-	var deltaFound = false
+func (cs commitService) AddToStage(filePaths []string) {
+	var canCommitBeCreated = false
 	stageCommit := Commit{
 		Committer:      "",
 		Date:           time.Time{},
 		PreviousCommit: "",
 		Message:        "",
 		Files:          make([]File, 0),
-	}
-
-	var filePaths []string
-	if path == "*" || path == "." {
-		allFiles, err := cs.repo.ListAllFiles("./")
-		if err != nil {
-			log.Fatal("failed to get all file paths for root repository.")
-		}
-		filePaths = append(filePaths, allFiles...)
-	} else {
-		filePaths = append(filePaths, path)
 	}
 
 	lastCommit, err := cs.GetLastCommitOnCurrentBranch()
@@ -133,46 +125,55 @@ func (cs commitService) AddToStage(path string) {
 			if err != nil {
 				log.Fatal("failed to read files. file path: " + filePath)
 			}
-			deltaFound = true
+			canCommitBeCreated = true
 			sha1Hash := cs.CalculateSHA1Hash(lines)
 			stageCommit.Files = append(stageCommit.Files, File{Path: filePath, Hash: sha1Hash})
-			err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: lines}, filepath.Join(util.BaseFilePath, util.BranchFolder, sha1Hash))
+			err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: lines}, filepath.Join(util.BaseFilePath, util.StageFolder, sha1Hash))
 			if err != nil {
 				log.Fatal("failed to save given file to stage: " + filePath)
 			}
 		}
 	} else {
 		stageCommit.PreviousCommit = lastCommit.CalculateHashForCommit()
-		for _, filePath := range filePaths {
-
-			currentFile, err := cs.repo.GetFileLines(filePath)
-			if err != nil {
-				log.Fatal("failed to read files. file path: " + filePath)
-			}
-
-			for _, file := range lastCommit.Files {
-				if path == file.Path {
-					previousFile := cs.ExtractFileFromObjectStore(file.Hash)
-					currentFileHash := cs.CalculateSHA1Hash(currentFile)
-					previousFileHash := cs.CalculateSHA1Hash(previousFile)
-					if currentFileHash != previousFileHash {
-						deltaFound = true
-						diff := cs.myers.GenerateDiffScript(previousFile, currentFile)
-						diff.PreviousBlobHash = previousFileHash
+		allPathsCombined := append(filePaths, lastCommit.GetFilePathList()...)
+		for _, path := range allPathsCombined {
+			currentFile, err := cs.repo.GetFileLines(path)
+			if err != nil && !slices.Contains(lastCommit.GetFilePathList(), path) {
+				log.Println("file couldn't found on working directory, filepath: " + path)
+			} else if err != nil && slices.Contains(lastCommit.GetFilePathList(), path) && slices.Contains(filePaths, path) {
+				canCommitBeCreated = true
+			} else if err != nil && slices.Contains(lastCommit.GetFilePathList(), path) && !slices.Contains(filePaths, path) {
+				sha1Hash := cs.CalculateSHA1Hash(currentFile)
+				stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: sha1Hash})
+			} else if err == nil && !slices.Contains(lastCommit.GetFilePathList(), path) {
+				canCommitBeCreated = true
+				sha1Hash := cs.CalculateSHA1Hash(currentFile)
+				stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: sha1Hash})
+				err = cs.repo.CompressAndSaveToFile(myersdiff.Diff{PreviousBlobHash: "nil", Commands: "nil", Data: currentFile}, filepath.Join(util.BaseFilePath, util.StageFolder, sha1Hash))
+				if err != nil {
+					log.Fatal("failed to save given file to stage: " + path)
+				}
+			} else {
+				previousFile := cs.ExtractFileFromObjectStore(lastCommit.GetAllFilePaths()[path])
+				currentFileHash := cs.CalculateSHA1Hash(currentFile)
+				previousFileHash := cs.CalculateSHA1Hash(previousFile)
+				if currentFileHash != previousFileHash {
+					if !slices.Contains(stageCommit.GetFilePathList(), path) {
 						stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: currentFileHash})
-						err := cs.repo.CompressAndSaveToFile(diff, filepath.Join(util.BaseFilePath, util.StageFolder, currentFileHash))
-						if err != nil {
-							log.Fatal("failed to save given file to stage: " + filePath)
-						}
 					}
-					//todo may be else can be added here.
+					canCommitBeCreated = true
+					diff := cs.myers.GenerateDiffScript(previousFile, currentFile)
+					diff.PreviousBlobHash = previousFileHash
+					err := cs.repo.CompressAndSaveToFile(diff, filepath.Join(util.BaseFilePath, util.StageFolder, currentFileHash))
+					if err != nil {
+						log.Fatal("failed to save given file to stage: " + path)
+					}
 				}
 			}
-			//todo should also commit newly added files to new commit
 		}
 	}
 
-	if deltaFound {
+	if canCommitBeCreated {
 		err = cs.repo.CompressAndSaveToFile(stageCommit, filepath.Join(util.BaseFilePath, util.StageFolder, "commit"))
 		if err != nil {
 			log.Fatal("failed to save commit to stage")
@@ -258,20 +259,17 @@ func (cs commitService) GetLastCommitOnCurrentBranch() (Commit, error) {
 	currentBranch := cs.GetCurrentBranch()
 	lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.BranchFolder, currentBranch))
 	if err != nil {
-		log.Println(err)
-		return Commit{}, err
+		log.Fatal("failed to get last commit on current branch.")
 	}
 
 	if lines[0] == "nil" {
-		log.Println("branch has no commit")
 		return Commit{}, errors.New("empty branch")
 	}
 
 	var commit Commit
 	err = cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, lines[0]), &commit)
 	if err != nil {
-		log.Println("failed to get last commit from repository")
-		return Commit{}, err
+		log.Fatal("failed to get last commit from repository")
 	}
 
 	return commit, nil
@@ -345,7 +343,7 @@ func (cs commitService) Log() {
 	commit, err := cs.GetLastCommitOnCurrentBranch()
 
 	for err == nil {
-		fmt.Printf("\033[32m  commit %s\n", commit.CalculateHashForCommit())
+		fmt.Printf("\033[32m Commit: %s\n", commit.CalculateHashForCommit())
 		fmt.Printf("\033[34m Author: %s\n", commit.Committer)
 		fmt.Printf("\033[36m Date:   %s\n\n", commit.Date.Format("Mon Jan 2 15:04:05 2006 -0700"))
 		fmt.Printf("\033[31m    %s\n\n", commit.Message)

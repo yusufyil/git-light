@@ -34,3 +34,21 @@ func (c Commit) CalculateHashForCommit() string {
 
 	return hashString
 }
+
+func (c Commit) GetAllFilePaths() map[string]string {
+	filePaths := make(map[string]string)
+	for _, file := range c.Files {
+		filePaths[file.Path] = file.Hash
+	}
+
+	return filePaths
+}
+
+func (c Commit) GetFilePathList() []string {
+	filePaths := make([]string, len(c.Files))
+	for _, file := range c.Files {
+		filePaths = append(filePaths, file.Path)
+	}
+
+	return filePaths
+}
