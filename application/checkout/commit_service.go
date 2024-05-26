@@ -135,17 +135,18 @@ func (cs commitService) AddToStage(filePaths []string) {
 		}
 	} else {
 		stageCommit.PreviousCommit = lastCommit.CalculateHashForCommit()
-		allPathsCombined := append(filePaths, lastCommit.GetFilePathList()...)
+		lastCommitFilePathList := lastCommit.GetFilePathList()
+		allPathsCombined := append(filePaths, lastCommitFilePathList...)
 		for _, path := range allPathsCombined {
 			currentFile, err := cs.repo.GetFileLines(path)
-			if err != nil && !slices.Contains(lastCommit.GetFilePathList(), path) {
+			if err != nil && !slices.Contains(lastCommitFilePathList, path) {
 				log.Println("file couldn't found on working directory, filepath: " + path)
-			} else if err != nil && slices.Contains(lastCommit.GetFilePathList(), path) && slices.Contains(filePaths, path) {
+			} else if err != nil && slices.Contains(lastCommitFilePathList, path) && slices.Contains(filePaths, path) {
 				canCommitBeCreated = true
-			} else if err != nil && slices.Contains(lastCommit.GetFilePathList(), path) && !slices.Contains(filePaths, path) {
+			} else if err != nil && slices.Contains(lastCommitFilePathList, path) && !slices.Contains(filePaths, path) {
 				sha1Hash := cs.CalculateSHA1Hash(currentFile)
 				stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: sha1Hash})
-			} else if err == nil && !slices.Contains(lastCommit.GetFilePathList(), path) {
+			} else if err == nil && !slices.Contains(lastCommitFilePathList, path) {
 				canCommitBeCreated = true
 				sha1Hash := cs.CalculateSHA1Hash(currentFile)
 				stageCommit.Files = append(stageCommit.Files, File{Path: path, Hash: sha1Hash})
@@ -183,21 +184,36 @@ func (cs commitService) AddToStage(filePaths []string) {
 
 func (cs commitService) Checkout(commitHashOrBranch string) {
 	var commit Commit
-	lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.BranchFolder, commitHashOrBranch))
-	if err == nil {
-		err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+
+	if strings.HasPrefix(commitHashOrBranch, "HEAD~") {
+		commit, err := cs.GetLastCommitOnCurrentBranch()
 		if err != nil {
-			log.Fatal("an error occurred when updating head")
+			log.Fatal("failed to get last commit on current branch when getting previous commit")
 		}
-		commitHashOrBranch = lines[0]
-	} else {
-		err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+
+		numberOfCommits, err := strconv.Atoi(strings.TrimPrefix(commitHashOrBranch, "HEAD~"))
 		if err != nil {
-			log.Fatal("an error occurred when updating head")
+			log.Fatal("failed to extract number of commits to go back from given HEAD~ pattern")
+		}
+
+		commitHashOrBranch = cs.getPreviousCommit(commit.PreviousCommit, numberOfCommits-1)
+	} else {
+		lines, err := cs.repo.GetFileLines(filepath.Join(util.BaseFilePath, util.BranchFolder, commitHashOrBranch))
+		if err == nil {
+			err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+			if err != nil {
+				log.Fatal("an error occurred when updating head")
+			}
+			commitHashOrBranch = lines[0]
+		} else {
+			err := cs.repo.WriteToFile(filepath.Join(util.BaseFilePath, util.Head), []string{commitHashOrBranch})
+			if err != nil {
+				log.Fatal("an error occurred when updating head")
+			}
 		}
 	}
 
-	err = cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, commitHashOrBranch), &commit)
+	err := cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, commitHashOrBranch), &commit)
 	if err != nil {
 		log.Fatal("no such commit hash / branch found")
 	}
@@ -353,4 +369,19 @@ func (cs commitService) Log() {
 			break
 		}
 	}
+}
+
+func (cs commitService) getPreviousCommit(commitHash string, numberOfCommits int) string {
+	if numberOfCommits == 0 || commitHash == "nil" {
+		return commitHash
+	}
+
+	var commit Commit
+	err := cs.repo.DecompressFromFileAndConvert(filepath.Join(util.BaseFilePath, util.ObjectFolder, commitHash), &commit)
+	if err != nil {
+		log.Fatal("failed to extract previous commit")
+	}
+
+	return cs.getPreviousCommit(commit.PreviousCommit, numberOfCommits-1)
+
 }

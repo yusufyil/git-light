@@ -14,8 +14,7 @@ var committerEmail string
 var commitCmd = &cobra.Command{
 	Use:   "commit",
 	Short: "commits given file",
-	Long: `this command creates a commit on top of current branch from staging area, if staging area empty or arguments
-			mismatch program will exit`,
+	Long:  `this command creates a commit on top of current branch from staging area, if staging area empty or arguments mismatch program will exit`,
 	Run: func(cmd *cobra.Command, args []string) {
 		repo := repository.NewRepository()
 		myersDiff := myersdiff.NewMyersDiffCalculator()

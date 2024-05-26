@@ -45,7 +45,7 @@ func (c Commit) GetAllFilePaths() map[string]string {
 }
 
 func (c Commit) GetFilePathList() []string {
-	filePaths := make([]string, len(c.Files))
+	filePaths := make([]string, 0)
 	for _, file := range c.Files {
 		filePaths = append(filePaths, file.Path)
 	}

@@ -11,8 +11,7 @@ import (
 var addCmd = &cobra.Command{
 	Use:   "add",
 	Short: "adds given file to stage",
-	Long: `this command calculates diffs according to given files and saves them into staging area if any difference exist
-		   between working directory and previous commit.`,
+	Long:  `this command calculates diffs according to given files and saves them into staging area if any difference exist between working directory and previous commit.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		repo := repository.NewRepository()
 		myersDiff := myersdiff.NewMyersDiffCalculator()
